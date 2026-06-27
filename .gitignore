@@ -1,0 +1,14 @@
+# Môi trường ảo Python
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+
+# Biến môi trường chứa thông tin bảo mật (QUAN TRỌNG)
+.env
+
+# Thư mục hệ thống của IDE/Hệ điều hành
+.vscode/
+.idea/
+.DS_Store

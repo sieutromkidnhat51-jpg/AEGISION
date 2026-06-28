@@ -47,28 +47,12 @@ function getThresholds() {
 // KHỞI TẠO
 // =====================================================
 async function init() {
-  // Load settings
   chrome.storage.local.get(['settings'], (r) => {
     if (r.settings) settings = { ...settings, ...r.settings };
   });
 
-  // Load face-api models từ thư mục /models/ trong extension
-  const modelPath = chrome.runtime.getURL('models');
-  statusEl.textContent = 'Đang tải mô hình AI...';
-
-  try {
-    await Promise.all([
-      faceapi.nets.tinyFaceDetector.loadFromUri(modelPath),
-      faceapi.nets.faceLandmark68TinyNet.loadFromUri(modelPath)
-    ]);
-    document.getElementById('dbgMode').textContent = 'face-api.js TinyFaceDetector + Landmark68';
-    statusEl.textContent = '✅ Mô hình AI đã sẵn sàng';
-  } catch (e) {
-    showError('Không tải được mô hình AI: ' + e.message);
-    return;
-  }
-
-  // Bật webcam
+  // ===== BƯỚC 1: Mở camera TRƯỚC =====
+  statusEl.textContent = 'Đang mở camera...';
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { width: 320, height: 240, facingMode: 'user', frameRate: { ideal: 15 } }
@@ -78,12 +62,26 @@ async function init() {
 
     eyeCanvas.width  = video.videoWidth  || 320;
     eyeCanvas.height = video.videoHeight || 240;
-
-    isRunning = true;
-    statusEl.textContent = '✅ Camera đang hoạt động';
-    startDetection();
+    statusEl.textContent = '✅ Camera hoạt động. Đang tải mô hình AI...';
   } catch (err) {
     showError('Không thể truy cập camera: ' + err.message);
+    return;
+  }
+
+  // ===== BƯỚC 2: Tải mô hình AI =====
+  const modelPath = chrome.runtime.getURL('models');
+  try {
+    await Promise.all([
+      faceapi.nets.tinyFaceDetector.loadFromUri(modelPath),
+      faceapi.nets.faceLandmark68TinyNet.loadFromUri(modelPath)
+    ]);
+    document.getElementById('dbgMode').textContent = 'face-api.js TinyFaceDetector + Landmark68';
+    statusEl.textContent = '✅ Sẵn sàng - Đang phát hiện mắt...';
+    isRunning = true;
+    startDetection();
+  } catch (e) {
+    showError('Lỗi tải mô hình AI: ' + e.message);
+    statusEl.textContent = '❌ Lỗi tải model';
   }
 }
 

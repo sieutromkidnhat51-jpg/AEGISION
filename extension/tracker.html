@@ -72,6 +72,20 @@
       width: 320px;
       text-align: center;
     }
+    #debugPanel {
+      width: 320px;
+      background: #161B22;
+      border: 1px solid #30363D;
+      border-radius: 6px;
+      padding: 8px;
+      margin-top: 10px;
+      font-family: monospace;
+      font-size: 11px;
+      color: #7EE787;
+      text-align: left;
+    }
+    .debug-line { margin-bottom: 3px; }
+    .debug-label { color: #8B949E; }
   </style>
 </head>
 <body>
@@ -84,6 +98,14 @@
     </div>
   </div>
   <div class="blur-display" id="blurDisplay">Blur: 0px</div>
+  
+  <div id="debugPanel">
+    <div class="debug-line"><span class="debug-label">Chế độ dò:</span> <span id="dbgMode">Đang khởi tạo...</span></div>
+    <div class="debug-line"><span class="debug-label">Tỷ lệ mắt (Eye Ratio):</span> <span id="dbgEyeRatio">0.000</span></div>
+    <div class="debug-line"><span class="debug-label">Ngưỡng rõ (Safe):</span> <span id="dbgSafe">0.000</span></div>
+    <div class="debug-line"><span class="debug-label">Ngưỡng mờ (Danger):</span> <span id="dbgDanger">0.000</span></div>
+  </div>
+
   <div id="status">Khởi tạo camera...</div>
   <div id="error"></div>
 

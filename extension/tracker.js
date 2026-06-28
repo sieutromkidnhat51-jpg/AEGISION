@@ -128,10 +128,11 @@ function startDetection() {
         } else {
           blurLevel = 0;
           lastBlurLevel = 0;
+          eyeDistanceRatio = 0;
         }
       }
 
-      // Cập nhật UI
+      // Cập nhật giao diện (UI)
       if (faceFound) {
         faceStatus.textContent = `Khuôn mặt: Đã phát hiện`;
         dotIndicator.className = blurLevel > 0 ? 'dot warning' : 'dot';
@@ -143,6 +144,13 @@ function startDetection() {
       blurDisplay.textContent = `Blur: ${blurLevel.toFixed(1)}px`;
       blurDisplay.className = blurLevel > settings.maxBlur * 0.5
         ? 'blur-display danger' : 'blur-display';
+        
+      // Cập nhật bảng Debug
+      const th = getThresholds();
+      document.getElementById('dbgMode').textContent = faceDetector ? 'FaceDetector API' : 'Fallback Skin Color';
+      document.getElementById('dbgEyeRatio').textContent = eyeDistanceRatio > 0 ? eyeDistanceRatio.toFixed(3) : '---';
+      document.getElementById('dbgSafe').textContent = th.safeRatio.toFixed(3);
+      document.getElementById('dbgDanger').textContent = th.dangerRatio.toFixed(3);
 
       // Gửi blur level đến background
       chrome.runtime.sendMessage({ type: 'BLUR_UPDATE', level: blurLevel });

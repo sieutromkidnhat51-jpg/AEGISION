@@ -24,14 +24,16 @@ let lastTooCloseNotify = 0;
 let lostFaceFrames = 0;
 let lastBlurLevel = 0;
 
-// --- 2 ngưỡng khoảng cách ---
-// warnCutoff (~40cm): cảnh báo "ngồi hơi gần" nhưng chưa mờ
-// blurCutoff (~30cm): màn hình mờ ngay lập tức
+// --- 2 ngưỡng khoảng cách, dùng faceWidthRatio trực tiếp (không *0.45)
+// Tỷ lệ vùng mặt so với chiều ngang camera
+// ~30cm: faceWidth ≈ 35-45% -> ratio ~0.40
+// ~40cm: faceWidth ≈ 25-30% -> ratio ~0.28
+// ~50cm+: faceWidth ≈ 18-22% -> ratio ~0.20
 function getThresholds() {
   const s = settings.sensitivity / 100;
   return {
-    warnCutoff: 0.11 + (s * 0.06),   // 50% -> ~0.14 (~40cm)
-    blurCutoff: 0.15 + (s * 0.08)    // 50% -> ~0.19 (~30cm)
+    warnCutoff: 0.20 + (s * 0.08),   // 50% -> ~0.24 (~40cm)
+    blurCutoff: 0.30 + (s * 0.10)    // 50% -> ~0.35 (~30cm)
   };
 }
 
@@ -158,10 +160,10 @@ function startDetection() {
 
       // --- Cập nhật debug ---
       const th = getThresholds();
-      document.getElementById('dbgEyeRatio').textContent = eyeRatio > 0 ? eyeRatio.toFixed(3) : '---';
+      document.getElementById('dbgEyeRatio').textContent = eyeRatio > 0 ? `${eyeRatio.toFixed(3)} (face ${(eyeRatio*100).toFixed(1)}%)` : '---';
       document.getElementById('dbgSafe').textContent = `warn>${th.warnCutoff.toFixed(3)} | blur>${th.blurCutoff.toFixed(3)}`;
       document.getElementById('dbgDanger').textContent =
-        zone === 'blur' ? '🔴 QUÁ GẦN (<30cm) - MỜ' :
+        zone === 'blur' ? '🔴 QUÁ GẦN (<30cm) - Mờ' :
         zone === 'warn' ? '🟡 HƠI GẦN (30-40cm)' :
         '🟢 AN TOÀN (>40cm)';
 
@@ -190,19 +192,26 @@ function startDetection() {
 // Hoạt động tốt hơn RGB ở nhiều điều kiện ánh sáng khác nhau
 
 function detectFaceYCrCb() {
-  // Scale nhỏ để tăng tốc
   ctx.drawImage(video, 0, 0, 160, 120);
   const imageData = ctx.getImageData(0, 0, 160, 120);
   const data = imageData.data;
 
-  let skinPixels = 0;
-  let minX = 160, maxX = 0;
+  // Chỉ quét vùng TRUNG TÂM của khung hình
+  // Giúp loại trừ tay, cổ, vai xuất hiện ở viền
+  const xMin = Math.floor(160 * 0.18); // 18% từ trái
+  const xMax = Math.floor(160 * 0.82); // 18% từ phải
+  const yMin = Math.floor(120 * 0.02); // 2% từ trên
+  const yMax = Math.floor(120 * 0.85); // 15% từ dưới
 
-  for (let y = 0; y < 120; y += 2) {
-    for (let x = 0; x < 160; x += 2) {
+  let skinPixels = 0;
+  let totalPixels = 0;
+  let minX = xMax, maxX = xMin;
+
+  for (let y = yMin; y < yMax; y += 2) {
+    for (let x = xMin; x < xMax; x += 2) {
       const i = (y * 160 + x) * 4;
       const r = data[i], g = data[i + 1], b = data[i + 2];
-
+      totalPixels++;
       if (isSkinYCrCb(r, g, b)) {
         skinPixels++;
         if (x < minX) minX = x;
@@ -211,18 +220,14 @@ function detectFaceYCrCb() {
     }
   }
 
-  const totalSampled = (160 * 120) / 4;
-  const skinRatio = skinPixels / totalSampled;
+  const skinRatio = skinPixels / totalPixels;
 
-  // Phải có đủ pixel da để coi là có khuôn mặt
-  if (skinRatio < 0.03) return 0;
+  // Cần ít nhất 4% pixel da trong vùng trung tâm
+  if (skinRatio < 0.04 || minX >= maxX) return 0;
 
-  // Tính chiều rộng vùng mặt
+  // Trả về tỷ lệ chiều rộng mặt so với toàn khung hình
   const faceWidth = maxX - minX;
-  const faceWidthRatio = faceWidth / 160;
-
-  // Trả về eye ratio giả lập (45% of face width)
-  return faceWidthRatio * 0.45;
+  return faceWidth / 160;
 }
 
 // Nhận diện màu da dùng YCrCb - hoạt động tốt ở nhiều ánh sáng

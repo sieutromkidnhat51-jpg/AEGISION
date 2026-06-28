@@ -24,12 +24,19 @@ let lastTooCloseNotify = 0;
 let lostFaceFrames = 0;
 let lastBlurLevel = 0;
 
-// Tính ngưỡng từ sensitivity (tinh chỉnh lại để nhạy hơn)
+// Tính ngưỡng từ sensitivity (Chuẩn hoá cho khoảng cách 50-60cm)
 function getThresholds() {
-  const s = settings.sensitivity / 100;
+  const s = settings.sensitivity / 100; // 0.0 đến 1.0
+  
+  // Tỷ lệ khuôn mặt so với camera. 
+  // Ở khoảng cách 50-60cm, mặt người thường chiếm khoảng 20%-25% khung hình (0.20 - 0.25).
+  // Khi dí sát vào 20-30cm, mặt sẽ chiếm khoảng 40%-50% (0.40 - 0.50).
+  
+  // sensitivity = 50% -> safe: 0.25 (~50cm), danger: 0.45 (~25cm)
+  // sensitivity = 100% (siêu nhạy) -> safe: 0.15 (~70cm), danger: 0.35 (~40cm)
   return {
-    safeRatio: 0.05 + (1 - s) * 0.10,    // Bắt đầu tính mờ sớm hơn
-    dangerRatio: 0.15 + (1 - s) * 0.20   // Đạt max mờ sớm hơn (không cần kề sát)
+    safeRatio: 0.35 - (s * 0.20),
+    dangerRatio: 0.55 - (s * 0.20)
   };
 }
 

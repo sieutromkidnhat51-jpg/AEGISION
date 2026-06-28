@@ -24,14 +24,14 @@ let lastTooCloseNotify = 0;
 let lostFaceFrames = 0;
 let lastBlurLevel = 0;
 
-// --- Ngưỡng cắt: Trong 50cm -> mờ, ngoài -> rõ ---
-// Ở 50cm, face width ≈ 22-28% khung hình (tỉ lệ fallback ~0.13 sau *0.45)
+// --- Ngưỡng cắt: Trong 20cm -> mờ, ngoài -> rõ ---
+// Ở 20cm, face width ≈ 55-70% khung hình → eye ratio ≈ 0.27
 function getCutoff() {
   const s = settings.sensitivity / 100;
-  // 50% sensitivity -> cutoff = 0.13 (~50cm)
-  // 80% sensitivity -> cutoff = 0.16 (~40cm, nhạy hơn)
-  // 30% sensitivity -> cutoff = 0.10 (~60cm, chậm hơn)
-  return 0.08 + (s * 0.10);
+  // 50% sensitivity -> cutoff = 0.27 (~20cm)
+  // 80% sensitivity -> cutoff = 0.33 (~15cm)
+  // 30% sensitivity -> cutoff = 0.21 (~25cm)
+  return 0.18 + (s * 0.18);
 }
 
 // ========== KHỞI TẠO ==========

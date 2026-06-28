@@ -24,11 +24,7 @@ def get_user_logs(user_id):
 def render_roadmap_agent():
     st.subheader("🤖 Trợ lý AI Lộ trình luyện mắt (Rule-based Engine)")
     
-    if "user" not in st.session_state or not st.session_state["user"]:
-        st.warning("Vui lòng đăng nhập để xem lộ trình cá nhân hóa.")
-        return
-
-    user_id = st.session_state["user"].id
+    user_id = "anonymous"
     logs = get_user_logs(user_id)
     
     if not logs:

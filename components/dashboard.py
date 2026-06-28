@@ -35,13 +35,12 @@ def render_dashboard():
             save_session_log()
 
 def save_session_log():
-    if "session_stats" in st.session_state and "user" in st.session_state:
+    if "session_stats" in st.session_state:
         stats = st.session_state["session_stats"]
-        user_id = st.session_state["user"].id
         try:
             # Lưu dữ liệu lên bảng user_logs của Supabase
             supabase.table("user_logs").insert({
-                "user_id": user_id,
+                "user_id": "anonymous",
                 "avg_ear": float(stats["avg_ear"]),
                 "avg_distance": float(stats["avg_distance"])
             }).execute()

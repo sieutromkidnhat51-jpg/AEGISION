@@ -83,8 +83,35 @@ async function init() {
   const loadingOverlay = document.getElementById('loadingOverlay');
   if (loadingOverlay) loadingOverlay.style.display = 'flex';
 
+// Chặn fetch để trả về dữ liệu từ base64 thay vì gọi network (tránh lỗi Failed to fetch)
+const originalFetch = window.fetch;
+window.fetch = async function(url, options) {
+  if (typeof url === 'string' && url.includes('tiny_face_detector_model-weights_manifest.json')) {
+    return new Response(JSON.stringify(EMBEDDED_MODELS.tfd.manifest), { status: 200, headers: {'Content-Type': 'application/json'} });
+  }
+  if (typeof url === 'string' && url.includes('tiny_face_detector_model-shard1')) {
+    const binary = atob(EMBEDDED_MODELS.tfd.shard);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Response(bytes, { status: 200, headers: {'Content-Type': 'application/octet-stream'} });
+  }
+  if (typeof url === 'string' && url.includes('face_landmark_68_tiny_model-weights_manifest.json')) {
+    return new Response(JSON.stringify(EMBEDDED_MODELS.lm68.manifest), { status: 200, headers: {'Content-Type': 'application/json'} });
+  }
+  if (typeof url === 'string' && url.includes('face_landmark_68_tiny_model-shard1')) {
+    const binary = atob(EMBEDDED_MODELS.lm68.shard);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Response(bytes, { status: 200, headers: {'Content-Type': 'application/octet-stream'} });
+  }
+  return originalFetch.apply(this, arguments);
+};
+
   try {
-    await loadModelsFromEmbedded();
+    await Promise.all([
+      faceapi.nets.tinyFaceDetector.loadFromUri('/models'),
+      faceapi.nets.faceLandmark68TinyNet.loadFromUri('/models')
+    ]);
     if (loadingOverlay) loadingOverlay.style.display = 'none';
     document.getElementById('dbgMode').textContent = 'TinyFaceDetector + Landmark68Tiny ✅';
     statusEl.textContent = '✅ Sẵn sàng! Đang nhận diện mắt...';
@@ -100,37 +127,6 @@ async function init() {
   }
 }
 
-// Chuyển base64 thành File object để truyền vào face-api
-function base64ToFile(b64, filename) {
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return new File([bytes], filename, { type: 'application/octet-stream' });
-}
-
-async function loadModelsFromEmbedded() {
-  if (typeof EMBEDDED_MODELS === 'undefined') {
-    throw new Error('models-embedded.js chưa được tải');
-  }
-
-  // Tiny Face Detector
-  const tfdManifest = new File(
-    [JSON.stringify(EMBEDDED_MODELS.tfd.manifest)],
-    'tiny_face_detector_model-weights_manifest.json',
-    { type: 'application/json' }
-  );
-  const tfdShard = base64ToFile(EMBEDDED_MODELS.tfd.shard, 'tiny_face_detector_model-shard1');
-  await faceapi.nets.tinyFaceDetector.loadFromFiles([tfdManifest, tfdShard]);
-
-  // Face Landmark 68 Tiny
-  const lm68Manifest = new File(
-    [JSON.stringify(EMBEDDED_MODELS.lm68.manifest)],
-    'face_landmark_68_tiny_model-weights_manifest.json',
-    { type: 'application/json' }
-  );
-  const lm68Shard = base64ToFile(EMBEDDED_MODELS.lm68.shard, 'face_landmark_68_tiny_model-shard1');
-  await faceapi.nets.faceLandmark68TinyNet.loadFromFiles([lm68Manifest, lm68Shard]);
-}
 
 // =====================================================
 // VÒNG LẶP NHẬN DIỆN

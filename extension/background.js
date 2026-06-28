@@ -1,7 +1,7 @@
 // IrisAdapt Pro - Background Service Worker
-// Điều phối giữa offscreen document, content scripts và popup
 
 let currentBlurLevel = 0;
+let trackerWindowId = null;
 
 const DEFAULT_SETTINGS = {
   maxBlur: 15,
@@ -10,39 +10,47 @@ const DEFAULT_SETTINGS = {
   sensitivity: 50
 };
 
-// ========== OFFSCREEN DOCUMENT ==========
+// ========== TRACKER WINDOW ==========
 
-async function setupOffscreen() {
-  try {
-    const contexts = await chrome.runtime.getContexts({
-      contextTypes: ['OFFSCREEN_DOCUMENT']
-    });
-    if (contexts.length > 0) return true;
+async function openTrackerWindow() {
+  // Đóng window cũ nếu còn
+  if (trackerWindowId !== null) {
+    try {
+      await chrome.windows.remove(trackerWindowId);
+    } catch (e) {}
+    trackerWindowId = null;
+  }
 
-    await chrome.offscreen.createDocument({
-      url: 'offscreen.html',
-      reasons: ['USER_MEDIA'],
-      justification: 'Truy cập webcam để phát hiện khoảng cách khuôn mặt bảo vệ mắt'
-    });
-    return true;
-  } catch (e) {
-    console.error('Lỗi tạo offscreen document:', e);
-    return false;
+  const win = await chrome.windows.create({
+    url: chrome.runtime.getURL('tracker.html'),
+    type: 'popup',
+    width: 380,
+    height: 340,
+    focused: false,
+    top: 50,
+    left: 50
+  });
+  trackerWindowId = win.id;
+}
+
+async function closeTrackerWindow() {
+  if (trackerWindowId !== null) {
+    try {
+      await chrome.windows.remove(trackerWindowId);
+    } catch (e) {}
+    trackerWindowId = null;
   }
 }
 
-async function removeOffscreen() {
-  try {
-    const contexts = await chrome.runtime.getContexts({
-      contextTypes: ['OFFSCREEN_DOCUMENT']
-    });
-    if (contexts.length > 0) {
-      await chrome.offscreen.closeDocument();
-    }
-  } catch (e) {
-    console.error('Lỗi xóa offscreen document:', e);
+// Theo dõi khi user đóng tracker window
+chrome.windows.onRemoved.addListener((windowId) => {
+  if (windowId === trackerWindowId) {
+    trackerWindowId = null;
+    chrome.storage.local.set({ isTracking: false, currentBlur: 0 });
+    currentBlurLevel = 0;
+    broadcastBlur(0);
   }
-}
+});
 
 // ========== GỬI BLUR ĐẾN TẤT CẢ TAB ==========
 
@@ -51,16 +59,14 @@ async function broadcastBlur(level) {
     const tabs = await chrome.tabs.query({});
     for (const tab of tabs) {
       try {
-        if (tab.id && tab.url && !tab.url.startsWith('chrome://') && !tab.url.startsWith('chrome-extension://')) {
-          await chrome.tabs.sendMessage(tab.id, { type: 'SET_BLUR', level });
+        if (tab.id && tab.url &&
+            !tab.url.startsWith('chrome://') &&
+            !tab.url.startsWith('chrome-extension://')) {
+          chrome.tabs.sendMessage(tab.id, { type: 'SET_BLUR', level }).catch(() => {});
         }
-      } catch (e) {
-        // Tab chưa load content script
-      }
+      } catch (e) {}
     }
-  } catch (e) {
-    console.error('Lỗi broadcast blur:', e);
-  }
+  } catch (e) {}
 }
 
 // ========== THÔNG BÁO ==========
@@ -92,21 +98,40 @@ function showNotification(title, message) {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.type) {
-    case 'START_TRACKING':
-      handleStartTracking(message.settings, sendResponse);
+    case 'START_TRACKING': {
+      const mergedSettings = { ...DEFAULT_SETTINGS, ...message.settings };
+      chrome.storage.local.set({ isTracking: true, settings: mergedSettings });
+      openTrackerWindow().then(() => {
+        sendResponse({ success: true });
+      }).catch((e) => {
+        sendResponse({ success: false, error: e.message });
+      });
       return true;
+    }
 
-    case 'STOP_TRACKING':
-      handleStopTracking(sendResponse);
+    case 'STOP_TRACKING': {
+      chrome.storage.local.set({ isTracking: false, currentBlur: 0 });
+      currentBlurLevel = 0;
+      broadcastBlur(0);
+      closeTrackerWindow().then(() => {
+        sendResponse({ success: true });
+      });
       return true;
+    }
 
-    case 'BLUR_UPDATE':
-      handleBlurUpdate(message.level);
+    case 'BLUR_UPDATE': {
+      const rounded = Math.round(message.level * 10) / 10;
+      if (Math.abs(rounded - currentBlurLevel) >= 0.3) {
+        currentBlurLevel = rounded;
+        chrome.storage.local.set({ currentBlur: currentBlurLevel });
+        broadcastBlur(currentBlurLevel);
+      }
       break;
+    }
 
     case 'NOTIFY_TOO_CLOSE':
       showNotification(
-        '⚠️ IrisAdapt Pro - Cảnh báo khoảng cách',
+        '⚠️ IrisAdapt Pro - Cảnh báo',
         'Bạn đang ngồi quá gần màn hình! Hãy lùi lại khoảng 50-70cm để bảo vệ mắt.'
       );
       break;
@@ -123,64 +148,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case 'SAVE_SETTINGS':
       chrome.storage.local.set({ settings: message.settings }, () => {
-        try {
-          chrome.runtime.sendMessage({ type: 'UPDATE_SETTINGS', settings: message.settings });
-        } catch (e) {}
         sendResponse({ success: true });
       });
       return true;
-
-    case 'DETECTION_ERROR':
-      chrome.storage.local.set({ isTracking: false, currentBlur: 0 });
-      broadcastBlur(0);
-      break;
   }
 });
 
-async function handleStartTracking(settings, sendResponse) {
-  const mergedSettings = { ...DEFAULT_SETTINGS, ...settings };
-  chrome.storage.local.set({ isTracking: true, settings: mergedSettings });
-
-  const success = await setupOffscreen();
-  if (success) {
-    setTimeout(() => {
-      try {
-        chrome.runtime.sendMessage({
-          type: 'BEGIN_DETECTION',
-          settings: mergedSettings
-        });
-      } catch (e) {}
-    }, 800);
-    sendResponse({ success: true });
-  } else {
-    chrome.storage.local.set({ isTracking: false });
-    sendResponse({ success: false, error: 'Không thể khởi tạo camera' });
-  }
-}
-
-async function handleStopTracking(sendResponse) {
-  chrome.storage.local.set({ isTracking: false, currentBlur: 0 });
-  currentBlurLevel = 0;
-  broadcastBlur(0);
-
-  try {
-    chrome.runtime.sendMessage({ type: 'STOP_DETECTION' });
-  } catch (e) {}
-
-  await removeOffscreen();
-  sendResponse({ success: true });
-}
-
-function handleBlurUpdate(level) {
-  const rounded = Math.round(level * 10) / 10;
-  if (Math.abs(rounded - currentBlurLevel) >= 0.3) {
-    currentBlurLevel = rounded;
-    chrome.storage.local.set({ currentBlur: currentBlurLevel });
-    broadcastBlur(currentBlurLevel);
-  }
-}
-
-// ========== KHI CÀI ĐẶT EXTENSION ==========
+// ========== KHI CÀI ĐẶT ==========
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.set({

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>IrisAdapt Pro - Tracker</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0E1117;
+      color: #E8EAED;
+      font-family: 'Inter', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 12px;
+      overflow: hidden;
+    }
+    h2 {
+      font-size: 14px;
+      margin-bottom: 8px;
+      color: #20C997;
+    }
+    #video {
+      width: 320px;
+      height: 240px;
+      border-radius: 12px;
+      border: 2px solid #1E2329;
+      background: #000;
+      object-fit: cover;
+    }
+    .info-bar {
+      display: flex;
+      gap: 16px;
+      margin-top: 10px;
+      font-size: 13px;
+    }
+    .info-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #20C997;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    .dot.warning { background: #F85149; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    #status { color: #8B949E; margin-top: 6px; font-size: 11px; }
+    .blur-display {
+      font-size: 20px;
+      font-weight: 700;
+      color: #20C997;
+      margin-top: 4px;
+    }
+    .blur-display.danger { color: #F85149; }
+    #error {
+      color: #F85149;
+      background: rgba(248,81,73,0.1);
+      border: 1px solid rgba(248,81,73,0.3);
+      border-radius: 8px;
+      padding: 10px;
+      margin-top: 8px;
+      font-size: 12px;
+      display: none;
+      width: 320px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h2>👁️ IrisAdapt Pro - Đang theo dõi</h2>
+  <video id="video" autoplay playsinline muted></video>
+  <div class="info-bar">
+    <div class="info-item">
+      <div class="dot" id="dotIndicator"></div>
+      <span id="faceStatus">Đang tìm khuôn mặt...</span>
+    </div>
+  </div>
+  <div class="blur-display" id="blurDisplay">Blur: 0px</div>
+  <div id="status">Khởi tạo camera...</div>
+  <div id="error"></div>
+
+  <script src="tracker.js"></script>
+</body>
+</html>

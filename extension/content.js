@@ -5,7 +5,8 @@ let currentBlur = 0;
 let overlay = null;
 
 function createOverlay() {
-  if (document.getElementById('irisadapt-blur-overlay')) return;
+  if (document.getElementById('irisadapt-blur-overlay')) return true;
+  if (!document.body) return false; // Chưa có body thì chờ
   
   overlay = document.createElement('div');
   overlay.id = 'irisadapt-blur-overlay';
@@ -16,18 +17,27 @@ function createOverlay() {
   overlay.style.height = '100vh';
   overlay.style.pointerEvents = 'none'; // Để click xuyên qua
   overlay.style.zIndex = '2147483647'; // Cao nhất có thể
-  overlay.style.transition = 'backdrop-filter 0.3s ease';
+  overlay.style.transition = 'backdrop-filter 0.3s ease, -webkit-backdrop-filter 0.3s ease';
   overlay.style.backdropFilter = 'blur(0px)';
-  
-  // Hỗ trợ Safari
   overlay.style.webkitBackdropFilter = 'blur(0px)';
   
-  document.documentElement.appendChild(overlay);
+  document.body.appendChild(overlay);
+  return true;
 }
 
 function applyBlur(level) {
   currentBlur = level;
-  if (!overlay) createOverlay();
+  
+  if (!overlay) {
+    const created = createOverlay();
+    if (!created) {
+      // Nếu body chưa sẵn sàng, đợi khi DOM load xong sẽ áp dụng
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => applyBlur(level), { once: true });
+      }
+      return;
+    }
+  }
   
   if (level <= 0) {
     overlay.style.backdropFilter = 'blur(0px)';

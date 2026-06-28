@@ -1,68 +1,62 @@
-// IrisAdapt Pro - Content Script
-// Áp dụng hiệu ứng blur lên tất cả trang web bằng overlay (an toàn hơn cho layout web)
+// IrisAdapt Pro - Content Script v2
+// Áp dụng blur bằng cách filter trực tiếp lên <html> element (cách mạnh nhất)
 
-let currentBlur = 0;
-let overlay = null;
+(function() {
+  'use strict';
 
-function createOverlay() {
-  if (document.getElementById('irisadapt-blur-overlay')) return true;
-  if (!document.body) return false; // Chưa có body thì chờ
-  
-  overlay = document.createElement('div');
-  overlay.id = 'irisadapt-blur-overlay';
-  overlay.style.position = 'fixed';
-  overlay.style.top = '0';
-  overlay.style.left = '0';
-  overlay.style.width = '100vw';
-  overlay.style.height = '100vh';
-  overlay.style.pointerEvents = 'none'; // Để click xuyên qua
-  overlay.style.zIndex = '2147483647'; // Cao nhất có thể
-  overlay.style.transition = 'backdrop-filter 0.3s ease, -webkit-backdrop-filter 0.3s ease';
-  overlay.style.backdropFilter = 'blur(0px)';
-  overlay.style.webkitBackdropFilter = 'blur(0px)';
-  
-  document.body.appendChild(overlay);
-  return true;
-}
+  let currentBlur = 0;
+  let styleEl = null;
 
-function applyBlur(level) {
-  currentBlur = level;
-  
-  if (!overlay) {
-    const created = createOverlay();
-    if (!created) {
-      // Nếu body chưa sẵn sàng, đợi khi DOM load xong sẽ áp dụng
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => applyBlur(level), { once: true });
-      }
-      return;
+  function ensureStyleEl() {
+    if (styleEl && document.head && document.head.contains(styleEl)) return;
+    styleEl = document.createElement('style');
+    styleEl.id = 'irisadapt-style';
+    // Thử chèn vào head, nếu không có thì chèn vào documentElement
+    if (document.head) {
+      document.head.appendChild(styleEl);
+    } else if (document.documentElement) {
+      document.documentElement.appendChild(styleEl);
     }
   }
-  
-  if (level <= 0) {
-    overlay.style.backdropFilter = 'blur(0px)';
-    overlay.style.webkitBackdropFilter = 'blur(0px)';
-  } else {
-    overlay.style.backdropFilter = `blur(${level}px)`;
-    overlay.style.webkitBackdropFilter = `blur(${level}px)`;
-  }
-}
 
-// Lắng nghe lệnh blur từ background
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'SET_BLUR') {
-    applyBlur(message.level);
-  }
-});
+  function applyBlur(level) {
+    currentBlur = Math.max(0, level);
+    ensureStyleEl();
 
-// Khi trang load, kiểm tra trạng thái tracking và áp dụng blur hiện tại
-chrome.storage.local.get(['currentBlur', 'isTracking'], (result) => {
-  if (result.isTracking && result.currentBlur > 0) {
-    // Đợi DOM sẵn sàng
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', () => applyBlur(result.currentBlur));
+    if (!styleEl) return;
+
+    if (currentBlur <= 0) {
+      styleEl.textContent = '';
     } else {
-      applyBlur(result.currentBlur);
+      // Áp dụng filter trực tiếp lên html element - cách mạnh nhất, hoạt động trên mọi trang
+      styleEl.textContent = `
+        html {
+          filter: blur(${currentBlur}px) !important;
+          transition: filter 0.4s ease !important;
+        }
+      `;
     }
   }
-});
+
+  // Lắng nghe lệnh từ background
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.type === 'SET_BLUR') {
+      applyBlur(message.level);
+    }
+  });
+
+  // Khi trang vừa load, đồng bộ trạng thái từ storage
+  function syncFromStorage() {
+    chrome.storage.local.get(['currentBlur', 'isTracking'], (result) => {
+      if (result.isTracking && result.currentBlur > 0) {
+        applyBlur(result.currentBlur);
+      }
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', syncFromStorage);
+  } else {
+    syncFromStorage();
+  }
+})();

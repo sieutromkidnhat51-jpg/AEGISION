@@ -1,5 +1,5 @@
-// IrisAdapt Pro - Tracker Window
-// Chạy webcam + face detection trong cửa sổ riêng
+// IrisAdapt Pro - Tracker Window v2
+// Face detection dùng thuật toán nhận diện da mặt cải tiến (YCrCb) hoạt động ở mọi ánh sáng
 
 const video = document.getElementById('video');
 const faceStatus = document.getElementById('faceStatus');
@@ -12,7 +12,7 @@ let isRunning = false;
 let faceDetector = null;
 let detectionInterval = null;
 
-// Settings
+// Settings mặc định
 let settings = {
   maxBlur: 15,
   sensitivity: 50,
@@ -24,45 +24,40 @@ let lastTooCloseNotify = 0;
 let lostFaceFrames = 0;
 let lastBlurLevel = 0;
 
-// Tính ngưỡng từ sensitivity cho KHOẢNG CÁCH 2 MẮT
-// Khoảng cách 50cm -> Mắt cách nhau khoảng 11% khung hình (0.11)
-// Yêu cầu mới: Trong phạm vi 50cm -> mờ ngay lập tức. Ngoài 50cm -> rõ ràng.
-function getThresholds() {
-  const s = settings.sensitivity / 100; 
-  // Điểm cắt (cutoff) mà tại đó bắt đầu mờ. Mặc định 50% -> 0.11 (~50cm)
-  const cutoff = 0.16 - (s * 0.10); 
-  
-  return {
-    safeRatio: cutoff,           // Ngoài 50cm (nhỏ hơn cutoff) -> Rõ
-    dangerRatio: cutoff + 0.01   // Trong 50cm (lớn hơn cutoff 0.01) -> Mờ ngay lập tức
-  };
+// --- Ngưỡng cắt: Trong 50cm -> mờ, ngoài -> rõ ---
+// Ở 50cm, face width ≈ 22-28% khung hình (tỉ lệ fallback ~0.13 sau *0.45)
+function getCutoff() {
+  const s = settings.sensitivity / 100;
+  // 50% sensitivity -> cutoff = 0.13 (~50cm)
+  // 80% sensitivity -> cutoff = 0.16 (~40cm, nhạy hơn)
+  // 30% sensitivity -> cutoff = 0.10 (~60cm, chậm hơn)
+  return 0.08 + (s * 0.10);
 }
 
 // ========== KHỞI TẠO ==========
 
 async function init() {
   chrome.storage.local.get(['settings'], (result) => {
-    if (result.settings) {
-      settings = { ...settings, ...result.settings };
-    }
+    if (result.settings) settings = { ...settings, ...result.settings };
+    updateDebugThresholds();
   });
 
+  // Thử FaceDetector API (Chrome 74+ với flag)
   if ('FaceDetector' in window) {
     try {
       faceDetector = new FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
-      statusEl.textContent = 'FaceDetector API sẵn sàng';
+      document.getElementById('dbgMode').textContent = 'FaceDetector API';
     } catch (e) {
-      showError('Không thể khởi tạo FaceDetector: ' + e.message);
       faceDetector = null;
+      document.getElementById('dbgMode').textContent = 'Skin Detection (YCrCb)';
     }
   } else {
-    statusEl.textContent = 'FaceDetector không khả dụng';
-    faceDetector = null;
+    document.getElementById('dbgMode').textContent = 'Skin Detection (YCrCb)';
   }
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 320, height: 240, facingMode: 'user' }
+      video: { width: 320, height: 240, facingMode: 'user', frameRate: { ideal: 10 } }
     });
     video.srcObject = stream;
     await video.play();
@@ -74,172 +69,175 @@ async function init() {
   }
 }
 
-// ========== FACE DETECTION ==========
+// ========== CANVAS CHO FALLBACK ==========
+
+const canvas = document.createElement('canvas');
+canvas.width = 160; // Giảm xuống để tăng tốc độ
+canvas.height = 120;
+const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+// ========== FACE DETECTION LOOP ==========
 
 function startDetection() {
   if (!isRunning) return;
 
   detectionInterval = setInterval(async () => {
-    if (!isRunning) return;
+    if (!isRunning || video.readyState < 2) return;
 
     try {
-      let blurLevel = 0;
+      let eyeRatio = 0;
       let faceFound = false;
-      let eyeDistanceRatio = 0;
 
       if (faceDetector) {
+        // --- Dùng FaceDetector API ---
         const faces = await faceDetector.detect(video);
         if (faces.length > 0) {
           faceFound = true;
           const face = faces[0];
-          
-          // Ưu tiên dùng toạ độ 2 mốc mắt (landmarks) nếu có
-          if (face.landmarks && face.landmarks.length > 0) {
-             const eyes = face.landmarks.filter(l => l.type === 'eye');
-             if (eyes.length >= 2) {
-                const dx = eyes[0].locations[0].x - eyes[1].locations[0].x;
-                const dy = eyes[0].locations[0].y - eyes[1].locations[0].y;
-                const eyeDist = Math.sqrt(dx*dx + dy*dy);
-                eyeDistanceRatio = eyeDist / video.videoWidth; 
-             }
+
+          // Thử lấy landmarks mắt
+          if (face.landmarks) {
+            const eyes = face.landmarks.filter(l => l.type === 'eye');
+            if (eyes.length >= 2) {
+              const dx = eyes[0].locations[0].x - eyes[1].locations[0].x;
+              const dy = eyes[0].locations[0].y - eyes[1].locations[0].y;
+              eyeRatio = Math.sqrt(dx * dx + dy * dy) / video.videoWidth;
+            }
           }
-          
-          // Nếu API không cung cấp landmarks trên Windows, dùng tỷ lệ giải phẫu học
-          // Khoảng cách 2 mắt = 45% chiều rộng khuôn mặt
-          if (eyeDistanceRatio === 0) {
-             const faceWidth = face.boundingBox.width;
-             eyeDistanceRatio = (faceWidth * 0.45) / video.videoWidth;
+          // Fallback: 45% face width
+          if (eyeRatio === 0) {
+            eyeRatio = (face.boundingBox.width * 0.45) / video.videoWidth;
           }
-          
-          blurLevel = calculateBlur(eyeDistanceRatio);
         }
       } else {
-        eyeDistanceRatio = await fallbackDetection();
-        faceFound = eyeDistanceRatio >= 0;
-        if (eyeDistanceRatio < 0) {
-          eyeDistanceRatio = 0;
-          blurLevel = 0;
+        // --- Dùng YCrCb Skin Detection ---
+        eyeRatio = detectFaceYCrCb();
+        faceFound = eyeRatio > 0;
+      }
+
+      // --- Tính blur dựa trên ngưỡng cắt ---
+      let blurLevel = 0;
+      const cutoff = getCutoff();
+
+      if (faceFound && eyeRatio > 0) {
+        if (eyeRatio >= cutoff) {
+          // Trong phạm vi 50cm -> mờ tối đa
+          blurLevel = settings.maxBlur;
         } else {
-          blurLevel = calculateBlur(eyeDistanceRatio);
+          blurLevel = 0; // Ngoài 50cm -> rõ
         }
       }
 
-      // Xử lý mất khuôn mặt tạm thời (giữ trạng thái blur vài khung hình)
+      // --- Giữ blur 5 frame nếu mất mặt tạm thời ---
       if (faceFound) {
         lostFaceFrames = 0;
         lastBlurLevel = blurLevel;
       } else {
         lostFaceFrames++;
-        if (lostFaceFrames < 5) { // Giữ blur trong ~1.5 giây
-          faceFound = true;
+        if (lostFaceFrames < 5) {
           blurLevel = lastBlurLevel;
+          faceFound = true;
         } else {
           blurLevel = 0;
           lastBlurLevel = 0;
-          eyeDistanceRatio = 0;
+          eyeRatio = 0;
         }
       }
 
-      // Cập nhật giao diện (UI)
-      if (faceFound) {
-        faceStatus.textContent = `Khuôn mặt: Đã phát hiện`;
-        dotIndicator.className = blurLevel > 0 ? 'dot warning' : 'dot';
-      } else {
-        faceStatus.textContent = 'Không phát hiện khuôn mặt';
-        dotIndicator.className = 'dot';
-      }
+      // --- Cập nhật UI ---
+      faceStatus.textContent = faceFound ? 'Khuôn mặt: Đã phát hiện' : 'Không phát hiện khuôn mặt';
+      dotIndicator.className = (faceFound && blurLevel > 0) ? 'dot warning' : 'dot';
+      blurDisplay.textContent = `Blur: ${blurLevel.toFixed(0)}px`;
+      blurDisplay.className = blurLevel > 0 ? 'blur-display danger' : 'blur-display';
 
-      blurDisplay.textContent = `Blur: ${blurLevel.toFixed(1)}px`;
-      blurDisplay.className = blurLevel > settings.maxBlur * 0.5
-        ? 'blur-display danger' : 'blur-display';
-        
-      // Cập nhật bảng Debug
-      const th = getThresholds();
-      document.getElementById('dbgMode').textContent = faceDetector ? 'FaceDetector API' : 'Fallback Skin Color';
-      document.getElementById('dbgEyeRatio').textContent = eyeDistanceRatio > 0 ? eyeDistanceRatio.toFixed(3) : '---';
-      document.getElementById('dbgSafe').textContent = th.safeRatio.toFixed(3);
-      document.getElementById('dbgDanger').textContent = th.dangerRatio.toFixed(3);
+      // --- Cập nhật debug ---
+      document.getElementById('dbgEyeRatio').textContent = eyeRatio > 0 ? eyeRatio.toFixed(3) : '---';
+      document.getElementById('dbgSafe').textContent = cutoff.toFixed(3) + ' (ngưỡng 50cm)';
+      document.getElementById('dbgDanger').textContent = eyeRatio >= cutoff ? '🔴 QUÁ GẦN' : '🟢 AN TOÀN';
 
-      // Gửi blur level đến background
+      // --- Gửi blur đến tất cả tab ---
       chrome.runtime.sendMessage({ type: 'BLUR_UPDATE', level: blurLevel });
 
-      // Thông báo khi quá gần
+      // --- Thông báo khi quá gần ---
       const now = Date.now();
       const cooldown = (settings.notificationCooldown || 30) * 1000;
-      if (blurLevel >= settings.maxBlur * 0.6 && now - lastTooCloseNotify > cooldown) {
+      if (blurLevel > 0 && now - lastTooCloseNotify > cooldown) {
         lastTooCloseNotify = now;
         chrome.runtime.sendMessage({ type: 'NOTIFY_TOO_CLOSE' });
       }
 
     } catch (err) {
-      // Bỏ qua lỗi detection
+      // Bỏ qua lỗi detection frame
     }
-  }, 300); // ~3.3 fps
+  }, 200); // 5 fps
 }
 
-function calculateBlur(eyeRatio) {
-  const { safeRatio, dangerRatio } = getThresholds();
+// ========== YCrCb SKIN DETECTION ==========
+// Thuật toán phân loại màu da trong không gian YCrCb
+// Hoạt động tốt hơn RGB ở nhiều điều kiện ánh sáng khác nhau
 
-  if (eyeRatio <= safeRatio) return 0;
-  if (eyeRatio >= dangerRatio) return settings.maxBlur;
-
-  const ratio = (eyeRatio - safeRatio) / (dangerRatio - safeRatio);
-  return ratio * settings.maxBlur;
-}
-
-// ========== FALLBACK DETECTION (không cần FaceDetector) ==========
-
-const fallbackCanvas = document.createElement('canvas');
-fallbackCanvas.width = 320;
-fallbackCanvas.height = 240;
-const fallbackCtx = fallbackCanvas.getContext('2d', { willReadFrequently: true });
-
-async function fallbackDetection() {
-  fallbackCtx.drawImage(video, 0, 0, 320, 240);
-  const imageData = fallbackCtx.getImageData(0, 0, 320, 240);
+function detectFaceYCrCb() {
+  // Scale nhỏ để tăng tốc
+  ctx.drawImage(video, 0, 0, 160, 120);
+  const imageData = ctx.getImageData(0, 0, 160, 120);
   const data = imageData.data;
 
-  // Phát hiện vùng da (skin detection) đơn giản
   let skinPixels = 0;
-  let minX = 320, maxX = 0, minY = 240, maxY = 0;
+  let minX = 160, maxX = 0;
 
-  for (let y = 0; y < 240; y += 2) {
-    for (let x = 0; x < 320; x += 2) {
-      const i = (y * 320 + x) * 4;
+  for (let y = 0; y < 120; y += 2) {
+    for (let x = 0; x < 160; x += 2) {
+      const i = (y * 160 + x) * 4;
       const r = data[i], g = data[i + 1], b = data[i + 2];
 
-      // Kiểm tra pixel có phải màu da không
-      if (isSkinColor(r, g, b)) {
+      if (isSkinYCrCb(r, g, b)) {
         skinPixels++;
         if (x < minX) minX = x;
         if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
       }
     }
   }
 
-  // Tính tỉ lệ vùng da
-  const totalPixels = (320 * 240) / 4; // do bước nhảy 2
-  const skinRatio = skinPixels / totalPixels;
+  const totalSampled = (160 * 120) / 4;
+  const skinRatio = skinPixels / totalSampled;
 
-  if (skinRatio < 0.02) return -1; // Không phát hiện khuôn mặt
+  // Phải có đủ pixel da để coi là có khuôn mặt
+  if (skinRatio < 0.03) return 0;
 
-  // Tính kích thước vùng da
+  // Tính chiều rộng vùng mặt
   const faceWidth = maxX - minX;
-  const faceWidthRatio = faceWidth / 320;
+  const faceWidthRatio = faceWidth / 160;
 
-  // Trả về Eye Distance Ratio giả lập (45% của face width)
-  return faceWidthRatio * 0.45; 
+  // Trả về eye ratio giả lập (45% of face width)
+  return faceWidthRatio * 0.45;
 }
 
-function isSkinColor(r, g, b) {
-  // Phát hiện màu da cơ bản (RGB)
-  return r > 95 && g > 40 && b > 20 &&
-         r > g && r > b &&
-         (r - g) > 15 &&
-         Math.abs(r - g) > 15 &&
-         r - b > 15;
+// Nhận diện màu da dùng YCrCb - hoạt động tốt ở nhiều ánh sáng
+// Tham khảo: Peer & Kovac (2003) - phổ biến trong computer vision
+function isSkinYCrCb(r, g, b) {
+  // Chuyển RGB -> YCrCb
+  const Y  =  0.299 * r + 0.587 * g + 0.114 * b;
+  const Cr = (r - Y) * 0.713 + 128;
+  const Cb = (b - Y) * 0.564 + 128;
+
+  // Ngưỡng da người trong không gian YCrCb (đã được kiểm chứng khoa học)
+  return (
+    Y  > 80  &&
+    Cr > 133 && Cr < 173 &&
+    Cb > 77  && Cb < 127
+  );
+}
+
+// ========== HELPER ==========
+
+function updateDebugThresholds() {
+  const cutoff = getCutoff();
+  document.getElementById('dbgSafe').textContent = cutoff.toFixed(3);
+}
+
+function showError(msg) {
+  errorEl.textContent = msg;
+  errorEl.style.display = 'block';
 }
 
 // ========== LẮNG NGHE SETTINGS ==========
@@ -247,26 +245,18 @@ function isSkinColor(r, g, b) {
 chrome.storage.onChanged.addListener((changes) => {
   if (changes.settings) {
     settings = { ...settings, ...changes.settings.newValue };
+    updateDebugThresholds();
   }
 });
 
-// ========== HELPER ==========
-
-function showError(msg) {
-  errorEl.textContent = msg;
-  errorEl.style.display = 'block';
-}
-
-// ========== CLEANUP KHI ĐÓNG CỬA SỔ ==========
+// ========== CLEANUP ==========
 
 window.addEventListener('beforeunload', () => {
   isRunning = false;
   if (detectionInterval) clearInterval(detectionInterval);
-  if (video.srcObject) {
-    video.srcObject.getTracks().forEach(t => t.stop());
-  }
+  if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
   chrome.runtime.sendMessage({ type: 'BLUR_UPDATE', level: 0 });
 });
 
-// Khởi chạy
+// Bắt đầu
 init();

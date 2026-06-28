@@ -24,61 +24,50 @@ let lastTooCloseNotify = 0;
 let lostFaceFrames = 0;
 let lastBlurLevel = 0;
 
-// Tính ngưỡng từ sensitivity (Chuẩn hoá cho khoảng cách 50-60cm)
+// Tính ngưỡng từ sensitivity cho KHOẢNG CÁCH 2 MẮT
+// Khoảng cách 50-60cm -> Mắt cách nhau khoảng 9%-11% khung hình (0.09 - 0.11)
+// Ngồi sát 25cm -> Mắt cách nhau khoảng 18%-22% khung hình (0.18 - 0.22)
 function getThresholds() {
-  const s = settings.sensitivity / 100; // 0.0 đến 1.0
-  
-  // Tỷ lệ khuôn mặt so với camera. 
-  // Ở khoảng cách 50-60cm, mặt người thường chiếm khoảng 20%-25% khung hình (0.20 - 0.25).
-  // Khi dí sát vào 20-30cm, mặt sẽ chiếm khoảng 40%-50% (0.40 - 0.50).
-  
-  // sensitivity = 50% -> safe: 0.25 (~50cm), danger: 0.45 (~25cm)
-  // sensitivity = 100% (siêu nhạy) -> safe: 0.15 (~70cm), danger: 0.35 (~40cm)
+  const s = settings.sensitivity / 100; 
   return {
-    safeRatio: 0.35 - (s * 0.20),
-    dangerRatio: 0.55 - (s * 0.20)
+    safeRatio: 0.15 - (s * 0.08),    // Mặc định 50% -> 0.11 (50-60cm an toàn)
+    dangerRatio: 0.25 - (s * 0.08)   // Mặc định 50% -> 0.21 (ngồi sát thì mờ max)
   };
 }
 
 // ========== KHỞI TẠO ==========
 
 async function init() {
-  // Load settings
   chrome.storage.local.get(['settings'], (result) => {
     if (result.settings) {
       settings = { ...settings, ...result.settings };
     }
   });
 
-  // Kiểm tra FaceDetector
   if ('FaceDetector' in window) {
     try {
       faceDetector = new FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
       statusEl.textContent = 'FaceDetector API sẵn sàng';
     } catch (e) {
       showError('Không thể khởi tạo FaceDetector: ' + e.message);
-      // Fallback: dùng canvas-based detection
       faceDetector = null;
     }
   } else {
-    statusEl.textContent = 'FaceDetector không khả dụng - dùng fallback';
+    statusEl.textContent = 'FaceDetector không khả dụng';
     faceDetector = null;
   }
 
-  // Mở webcam
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { width: 320, height: 240, facingMode: 'user' }
     });
     video.srcObject = stream;
     await video.play();
-    
     statusEl.textContent = '✅ Camera đang hoạt động';
     isRunning = true;
     startDetection();
   } catch (err) {
     showError('Không thể truy cập camera: ' + err.message);
-    statusEl.textContent = '❌ Lỗi camera';
   }
 }
 
@@ -93,18 +82,35 @@ function startDetection() {
     try {
       let blurLevel = 0;
       let faceFound = false;
+      let eyeDistanceRatio = 0;
 
       if (faceDetector) {
-        // Dùng FaceDetector API
         const faces = await faceDetector.detect(video);
         if (faces.length > 0) {
           faceFound = true;
           const face = faces[0];
-          const faceWidthRatio = face.boundingBox.width / video.videoWidth;
-          blurLevel = calculateBlur(faceWidthRatio);
+          
+          // Ưu tiên dùng toạ độ 2 mốc mắt (landmarks) nếu có
+          if (face.landmarks && face.landmarks.length > 0) {
+             const eyes = face.landmarks.filter(l => l.type === 'eye');
+             if (eyes.length >= 2) {
+                const dx = eyes[0].locations[0].x - eyes[1].locations[0].x;
+                const dy = eyes[0].locations[0].y - eyes[1].locations[0].y;
+                const eyeDist = Math.sqrt(dx*dx + dy*dy);
+                eyeDistanceRatio = eyeDist / video.videoWidth; 
+             }
+          }
+          
+          // Nếu API không cung cấp landmarks trên Windows, dùng tỷ lệ giải phẫu học
+          // Khoảng cách 2 mắt = 45% chiều rộng khuôn mặt
+          if (eyeDistanceRatio === 0) {
+             const faceWidth = face.boundingBox.width;
+             eyeDistanceRatio = (faceWidth * 0.45) / video.videoWidth;
+          }
+          
+          blurLevel = calculateBlur(eyeDistanceRatio);
         }
       } else {
-        // Fallback: dùng canvas để phân tích kích thước khuôn mặt
         blurLevel = await fallbackDetection();
         faceFound = blurLevel >= 0;
         if (blurLevel < 0) blurLevel = 0;
@@ -207,7 +213,7 @@ async function fallbackDetection() {
   const faceWidth = maxX - minX;
   const faceWidthRatio = faceWidth / 320;
 
-  return calculateBlur(faceWidthRatio);
+  return calculateBlur(faceWidthRatio * 0.45); // Giải lập eye distance ratio
 }
 
 function isSkinColor(r, g, b) {

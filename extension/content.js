@@ -1,16 +1,40 @@
 // IrisAdapt Pro - Content Script
-// Áp dụng hiệu ứng blur lên tất cả trang web
+// Áp dụng hiệu ứng blur lên tất cả trang web bằng overlay (an toàn hơn cho layout web)
 
 let currentBlur = 0;
+let overlay = null;
+
+function createOverlay() {
+  if (document.getElementById('irisadapt-blur-overlay')) return;
+  
+  overlay = document.createElement('div');
+  overlay.id = 'irisadapt-blur-overlay';
+  overlay.style.position = 'fixed';
+  overlay.style.top = '0';
+  overlay.style.left = '0';
+  overlay.style.width = '100vw';
+  overlay.style.height = '100vh';
+  overlay.style.pointerEvents = 'none'; // Để click xuyên qua
+  overlay.style.zIndex = '2147483647'; // Cao nhất có thể
+  overlay.style.transition = 'backdrop-filter 0.3s ease';
+  overlay.style.backdropFilter = 'blur(0px)';
+  
+  // Hỗ trợ Safari
+  overlay.style.webkitBackdropFilter = 'blur(0px)';
+  
+  document.documentElement.appendChild(overlay);
+}
 
 function applyBlur(level) {
   currentBlur = level;
+  if (!overlay) createOverlay();
+  
   if (level <= 0) {
-    document.documentElement.style.removeProperty('filter');
-    document.documentElement.style.removeProperty('transition');
+    overlay.style.backdropFilter = 'blur(0px)';
+    overlay.style.webkitBackdropFilter = 'blur(0px)';
   } else {
-    document.documentElement.style.filter = `blur(${level}px)`;
-    document.documentElement.style.transition = 'filter 0.3s ease';
+    overlay.style.backdropFilter = `blur(${level}px)`;
+    overlay.style.webkitBackdropFilter = `blur(${level}px)`;
   }
 }
 

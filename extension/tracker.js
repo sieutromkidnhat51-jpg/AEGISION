@@ -21,13 +21,15 @@ let settings = {
 };
 
 let lastTooCloseNotify = 0;
+let lostFaceFrames = 0;
+let lastBlurLevel = 0;
 
-// Tính ngưỡng từ sensitivity
+// Tính ngưỡng từ sensitivity (tinh chỉnh lại để nhạy hơn)
 function getThresholds() {
   const s = settings.sensitivity / 100;
   return {
-    safeRatio: 0.10 + (1 - s) * 0.10,
-    dangerRatio: 0.25 + (1 - s) * 0.15
+    safeRatio: 0.05 + (1 - s) * 0.10,    // Bắt đầu tính mờ sớm hơn
+    dangerRatio: 0.15 + (1 - s) * 0.20   // Đạt max mờ sớm hơn (không cần kề sát)
   };
 }
 
@@ -99,6 +101,21 @@ function startDetection() {
         blurLevel = await fallbackDetection();
         faceFound = blurLevel >= 0;
         if (blurLevel < 0) blurLevel = 0;
+      }
+
+      // Xử lý mất khuôn mặt tạm thời (giữ trạng thái blur vài khung hình)
+      if (faceFound) {
+        lostFaceFrames = 0;
+        lastBlurLevel = blurLevel;
+      } else {
+        lostFaceFrames++;
+        if (lostFaceFrames < 5) { // Giữ blur trong ~1.5 giây
+          faceFound = true;
+          blurLevel = lastBlurLevel;
+        } else {
+          blurLevel = 0;
+          lastBlurLevel = 0;
+        }
       }
 
       // Cập nhật UI

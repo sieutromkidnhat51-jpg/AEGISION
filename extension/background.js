@@ -72,7 +72,7 @@ async function broadcastBlur(level) {
 
 let lastNotificationTime = 0;
 
-function showNotification(title, message) {
+function showNotification(zone) {
   chrome.storage.local.get(['settings'], (result) => {
     const settings = result.settings || DEFAULT_SETTINGS;
     const cooldown = (settings.notificationCooldown || 30) * 1000;
@@ -83,12 +83,20 @@ function showNotification(title, message) {
 
     lastNotificationTime = now;
 
+    const title = zone === 'warn'
+      ? '🟡 IrisAdapt Pro - Hơi gần'
+      : '🔴 IrisAdapt Pro - Quá gần!';
+
+    const message = zone === 'warn'
+      ? 'Bạn đang ngồi trong khoảng 30-40cm. Hãy lùi ra xa một chút để bảo vệ mắt.'
+      : 'Bạn đang ngồi DƯỚI 30cm! Màn hình đã bị làm mờ. Hãy lùi ngay ra xa!';
+
     chrome.notifications.create(`irisadapt-${now}`, {
       type: 'basic',
       iconUrl: 'icon.png',
-      title: title,
-      message: message,
-      priority: 2
+      title,
+      message,
+      priority: zone === 'blur' ? 2 : 1
     });
   });
 }
@@ -129,10 +137,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     case 'NOTIFY_TOO_CLOSE':
-      showNotification(
-        '⚠️ IrisAdapt Pro - Cảnh báo',
-        'Bạn đang ngồi quá gần màn hình! Hãy lùi lại khoảng 50-70cm để bảo vệ mắt.'
-      );
+      showNotification(message.zone || 'blur');
       break;
 
     case 'GET_STATUS':

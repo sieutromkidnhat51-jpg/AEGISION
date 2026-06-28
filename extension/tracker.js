@@ -24,14 +24,15 @@ let lastTooCloseNotify = 0;
 let lostFaceFrames = 0;
 let lastBlurLevel = 0;
 
-// --- Ngưỡng cắt: Trong 20cm -> mờ, ngoài -> rõ ---
-// Ở 20cm, face width ≈ 55-70% khung hình → eye ratio ≈ 0.27
-function getCutoff() {
+// --- 2 ngưỡng khoảng cách ---
+// warnCutoff (~40cm): cảnh báo "ngồi hơi gần" nhưng chưa mờ
+// blurCutoff (~30cm): màn hình mờ ngay lập tức
+function getThresholds() {
   const s = settings.sensitivity / 100;
-  // 50% sensitivity -> cutoff = 0.27 (~20cm)
-  // 80% sensitivity -> cutoff = 0.33 (~15cm)
-  // 30% sensitivity -> cutoff = 0.21 (~25cm)
-  return 0.18 + (s * 0.18);
+  return {
+    warnCutoff: 0.11 + (s * 0.06),   // 50% -> ~0.14 (~40cm)
+    blurCutoff: 0.15 + (s * 0.08)    // 50% -> ~0.19 (~30cm)
+  };
 }
 
 // ========== KHỞI TẠO ==========
@@ -115,16 +116,21 @@ function startDetection() {
         faceFound = eyeRatio > 0;
       }
 
-      // --- Tính blur dựa trên ngưỡng cắt ---
+      // --- Tính blur dựa trên 2 ngưỡng ---
       let blurLevel = 0;
-      const cutoff = getCutoff();
+      let zone = 'safe'; // 'safe' | 'warn' | 'blur'
+      const { warnCutoff, blurCutoff } = getThresholds();
 
       if (faceFound && eyeRatio > 0) {
-        if (eyeRatio >= cutoff) {
-          // Trong phạm vi 50cm -> mờ tối đa
-          blurLevel = settings.maxBlur;
+        if (eyeRatio >= blurCutoff) {
+          blurLevel = settings.maxBlur; // < 30cm -> mờ tối đa
+          zone = 'blur';
+        } else if (eyeRatio >= warnCutoff) {
+          blurLevel = 0; // 30-40cm -> chỉ cảnh báo, chưa mờ
+          zone = 'warn';
         } else {
-          blurLevel = 0; // Ngoài 50cm -> rõ
+          blurLevel = 0; // > 40cm -> an toàn
+          zone = 'safe';
         }
       }
 
@@ -151,19 +157,26 @@ function startDetection() {
       blurDisplay.className = blurLevel > 0 ? 'blur-display danger' : 'blur-display';
 
       // --- Cập nhật debug ---
+      const th = getThresholds();
       document.getElementById('dbgEyeRatio').textContent = eyeRatio > 0 ? eyeRatio.toFixed(3) : '---';
-      document.getElementById('dbgSafe').textContent = cutoff.toFixed(3) + ' (ngưỡng 50cm)';
-      document.getElementById('dbgDanger').textContent = eyeRatio >= cutoff ? '🔴 QUÁ GẦN' : '🟢 AN TOÀN';
+      document.getElementById('dbgSafe').textContent = `warn>${th.warnCutoff.toFixed(3)} | blur>${th.blurCutoff.toFixed(3)}`;
+      document.getElementById('dbgDanger').textContent =
+        zone === 'blur' ? '🔴 QUÁ GẦN (<30cm) - MỜ' :
+        zone === 'warn' ? '🟡 HƠI GẦN (30-40cm)' :
+        '🟢 AN TOÀN (>40cm)';
 
       // --- Gửi blur đến tất cả tab ---
       chrome.runtime.sendMessage({ type: 'BLUR_UPDATE', level: blurLevel });
 
-      // --- Thông báo khi quá gần ---
+      // --- Thông báo theo từng vùng ---
       const now = Date.now();
       const cooldown = (settings.notificationCooldown || 30) * 1000;
-      if (blurLevel > 0 && now - lastTooCloseNotify > cooldown) {
+      if (zone === 'blur' && now - lastTooCloseNotify > cooldown) {
         lastTooCloseNotify = now;
-        chrome.runtime.sendMessage({ type: 'NOTIFY_TOO_CLOSE' });
+        chrome.runtime.sendMessage({ type: 'NOTIFY_TOO_CLOSE', zone: 'blur' });
+      } else if (zone === 'warn' && now - lastTooCloseNotify > cooldown) {
+        lastTooCloseNotify = now;
+        chrome.runtime.sendMessage({ type: 'NOTIFY_TOO_CLOSE', zone: 'warn' });
       }
 
     } catch (err) {
@@ -231,8 +244,8 @@ function isSkinYCrCb(r, g, b) {
 // ========== HELPER ==========
 
 function updateDebugThresholds() {
-  const cutoff = getCutoff();
-  document.getElementById('dbgSafe').textContent = cutoff.toFixed(3);
+  const th = getThresholds();
+  document.getElementById('dbgSafe').textContent = `warn>${th.warnCutoff.toFixed(3)} | blur>${th.blurCutoff.toFixed(3)}`;
 }
 
 function showError(msg) {

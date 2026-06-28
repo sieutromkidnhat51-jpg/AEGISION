@@ -17,9 +17,9 @@
       overflow: hidden;
     }
     h2 { font-size: 14px; margin-bottom: 8px; color: #20C997; }
-    #videoWrap { position: relative; width: 320px; height: 240px; }
+    #videoWrap { position: relative; width: 380px; height: 240px; }
     #video {
-      width: 320px; height: 240px;
+      width: 380px; height: 240px;
       border-radius: 12px;
       border: 2px solid #1E2329;
       background: #000;
@@ -27,9 +27,24 @@
     }
     #eyeCanvas {
       position: absolute; top: 0; left: 0;
-      width: 320px; height: 240px;
+      width: 380px; height: 240px;
       border-radius: 12px;
       pointer-events: none;
+    }
+    #loadingOverlay {
+      display: none;
+      position: absolute; top: 0; left: 0;
+      width: 380px; height: 240px;
+      border-radius: 12px;
+      background: rgba(0,0,0,0.75);
+      color: #20C997;
+      font-size: 13px;
+      font-weight: 600;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 16px;
+      z-index: 10;
     }
     .info-bar { display: flex; gap: 16px; margin-top: 10px; font-size: 13px; }
     .info-item { display: flex; align-items: center; gap: 6px; }
@@ -74,6 +89,7 @@
   <div id="videoWrap">
     <video id="video" autoplay playsinline muted></video>
     <canvas id="eyeCanvas"></canvas>
+    <div id="loadingOverlay">⏳ Đang tải mô hình AI nhận diện mắt...<br><small style="opacity:0.7">Lần đầu có thể mất 5-10 giây</small></div>
   </div>
   <div class="info-bar">
     <div class="info-item">

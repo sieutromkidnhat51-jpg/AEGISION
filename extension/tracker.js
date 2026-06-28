@@ -79,21 +79,36 @@ async function init() {
     return;
   }
 
-  // BƯỚC 2: Load models
+  // BƯỚC 2: Load models với timeout 15 giây
   const modelPath = chrome.runtime.getURL('models');
+  const loadingOverlay = document.getElementById('loadingOverlay');
+  if (loadingOverlay) loadingOverlay.style.display = 'flex';
+
+  const timeout = new Promise((_, rej) =>
+    setTimeout(() => rej(new Error('Timeout sau 15 giây')), 15000)
+  );
+
   try {
-    await Promise.all([
-      faceapi.nets.tinyFaceDetector.loadFromUri(modelPath),
-      faceapi.nets.faceLandmark68TinyNet.loadFromUri(modelPath)
+    await Promise.race([
+      Promise.all([
+        faceapi.nets.tinyFaceDetector.loadFromUri(modelPath),
+        faceapi.nets.faceLandmark68TinyNet.loadFromUri(modelPath)
+      ]),
+      timeout
     ]);
+    if (loadingOverlay) loadingOverlay.style.display = 'none';
     document.getElementById('dbgMode').textContent = 'TinyFaceDetector + Landmark68Tiny ✅';
     statusEl.textContent = '✅ Sẵn sàng! Đang nhận diện mắt...';
     document.getElementById('dbgState').textContent = '⚪ Chưa phát hiện mặt';
     isRunning = true;
     startDetection();
   } catch (e) {
-    showError('Lỗi tải model: ' + e.message);
-    statusEl.textContent = '❌ Lỗi tải model AI';
+    if (loadingOverlay) {
+      loadingOverlay.textContent = '❌ Lỗi tải model: ' + e.message;
+      loadingOverlay.style.background = 'rgba(200,0,0,0.85)';
+    }
+    showError('Lỗi tải model AI: ' + e.message);
+    statusEl.textContent = '❌ ' + e.message;
   }
 }
 

@@ -24,8 +24,8 @@ async function openTrackerWindow() {
   const win = await chrome.windows.create({
     url: chrome.runtime.getURL('tracker.html'),
     type: 'popup',
-    width: 380,
-    height: 340,
+    width: 420,
+    height: 540,
     top: 50,
     left: 50
   });

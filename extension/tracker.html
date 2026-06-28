@@ -84,11 +84,17 @@
   <div class="blur-display" id="blurDisplay">Khoảng cách: --</div>
 
   <div id="debugPanel">
-    <div class="debug-line"><span class="debug-label">Chế độ dò:</span> <span id="dbgMode">Đang tải mô hình AI...</span></div>
-    <div class="debug-line"><span class="debug-label">Khoảng cách mắt:</span> <span id="dbgEyeRatio">---</span></div>
-    <div class="debug-line"><span class="debug-label">Ngưỡng cảnh báo (40cm):</span> <span id="dbgWarn">---</span></div>
-    <div class="debug-line"><span class="debug-label">Ngưỡng làm mờ (30cm):</span> <span id="dbgBlur">---</span></div>
-    <div class="debug-line"><span class="debug-label">Trạng thái:</span> <span id="dbgState">🟡 Đang khởi tạo</span></div>
+    <div class="debug-line"><span class="debug-label">Chế độ dò:</span> <span id="dbgMode">Đang tải...</span></div>
+    <div class="debug-line"><span class="debug-label">Eye Ratio (thực tế):</span> <span id="dbgEyeRatio">---</span></div>
+    <div class="debug-line"><span class="debug-label">Ngưỡng cảnh báo (~40cm):</span> <span id="dbgWarn">---</span></div>
+    <div class="debug-line"><span class="debug-label">Ngưỡng làm mờ (~30cm):</span> <span id="dbgBlur">---</span></div>
+    <div class="debug-line"><span class="debug-label">Trạng thái:</span> <span id="dbgState">⏳ Đang khởi tạo</span></div>
+  </div>
+
+  <!-- Nút test để kiểm tra blur hoạt động không -->
+  <div style="display:flex;gap:6px;margin-top:8px;font-size:11px">
+    <button onclick="testBlur(15)" style="background:#F85149;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer">Test Mờ 15px</button>
+    <button onclick="testBlur(0)"  style="background:#20C997;color:#0E1117;border:none;padding:4px 10px;border-radius:4px;cursor:pointer">Xóa Mờ</button>
   </div>
 
   <div id="status">Đang tải mô hình AI nhận diện mắt...</div>

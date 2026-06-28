@@ -111,9 +111,14 @@ function startDetection() {
           blurLevel = calculateBlur(eyeDistanceRatio);
         }
       } else {
-        blurLevel = await fallbackDetection();
-        faceFound = blurLevel >= 0;
-        if (blurLevel < 0) blurLevel = 0;
+        eyeDistanceRatio = await fallbackDetection();
+        faceFound = eyeDistanceRatio >= 0;
+        if (eyeDistanceRatio < 0) {
+          eyeDistanceRatio = 0;
+          blurLevel = 0;
+        } else {
+          blurLevel = calculateBlur(eyeDistanceRatio);
+        }
       }
 
       // Xử lý mất khuôn mặt tạm thời (giữ trạng thái blur vài khung hình)
@@ -169,13 +174,13 @@ function startDetection() {
   }, 300); // ~3.3 fps
 }
 
-function calculateBlur(faceWidthRatio) {
+function calculateBlur(eyeRatio) {
   const { safeRatio, dangerRatio } = getThresholds();
 
-  if (faceWidthRatio <= safeRatio) return 0;
-  if (faceWidthRatio >= dangerRatio) return settings.maxBlur;
+  if (eyeRatio <= safeRatio) return 0;
+  if (eyeRatio >= dangerRatio) return settings.maxBlur;
 
-  const ratio = (faceWidthRatio - safeRatio) / (dangerRatio - safeRatio);
+  const ratio = (eyeRatio - safeRatio) / (dangerRatio - safeRatio);
   return ratio * settings.maxBlur;
 }
 
@@ -221,7 +226,8 @@ async function fallbackDetection() {
   const faceWidth = maxX - minX;
   const faceWidthRatio = faceWidth / 320;
 
-  return calculateBlur(faceWidthRatio * 0.45); // Giải lập eye distance ratio
+  // Trả về Eye Distance Ratio giả lập (45% của face width)
+  return faceWidthRatio * 0.45; 
 }
 
 function isSkinColor(r, g, b) {

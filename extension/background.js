@@ -26,7 +26,6 @@ async function openTrackerWindow() {
     type: 'popup',
     width: 380,
     height: 340,
-    focused: false,
     top: 50,
     left: 50
   });

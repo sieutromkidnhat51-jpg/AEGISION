@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "IrisAdapt Pro - Bảo vệ mắt",
+  "description": "Tự động làm mờ trang web khi ngồi quá gần màn hình và gửi thông báo bảo vệ mắt",
+  "version": "1.0.0",
+  "permissions": [
+    "notifications",
+    "offscreen",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "IrisAdapt Pro - Bảo vệ mắt"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "icons": {
+    "128": "icon.png"
+  }
+}

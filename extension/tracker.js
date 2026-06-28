@@ -25,13 +25,16 @@ let lostFaceFrames = 0;
 let lastBlurLevel = 0;
 
 // Tính ngưỡng từ sensitivity cho KHOẢNG CÁCH 2 MẮT
-// Khoảng cách 50-60cm -> Mắt cách nhau khoảng 9%-11% khung hình (0.09 - 0.11)
-// Ngồi sát 25cm -> Mắt cách nhau khoảng 18%-22% khung hình (0.18 - 0.22)
+// Khoảng cách 50cm -> Mắt cách nhau khoảng 11% khung hình (0.11)
+// Yêu cầu mới: Trong phạm vi 50cm -> mờ ngay lập tức. Ngoài 50cm -> rõ ràng.
 function getThresholds() {
   const s = settings.sensitivity / 100; 
+  // Điểm cắt (cutoff) mà tại đó bắt đầu mờ. Mặc định 50% -> 0.11 (~50cm)
+  const cutoff = 0.16 - (s * 0.10); 
+  
   return {
-    safeRatio: 0.15 - (s * 0.08),    // Mặc định 50% -> 0.11 (50-60cm an toàn)
-    dangerRatio: 0.25 - (s * 0.08)   // Mặc định 50% -> 0.21 (ngồi sát thì mờ max)
+    safeRatio: cutoff,           // Ngoài 50cm (nhỏ hơn cutoff) -> Rõ
+    dangerRatio: cutoff + 0.01   // Trong 50cm (lớn hơn cutoff 0.01) -> Mờ ngay lập tức
   };
 }
 

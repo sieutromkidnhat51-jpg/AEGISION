@@ -89,14 +89,24 @@ def run_live_chart(placeholder, effect_placeholder, audio_placeholder, ctx):
                 data = pd.concat([data, new_row], ignore_index=True)
                 
                 # ======= 1. TÍNH NĂNG MỜ MÀN HÌNH (BLUR FILTER) =======
-                # Kiểm tra cờ is_too_close từ video processor
-                target_blur = 8 if ctx.video_processor.is_too_close else 0
+                # Blur thay đổi tỉ lệ theo khoảng cách: càng gần -> càng mờ
+                dist = ctx.video_processor.last_distance_pixel
+                safe_dist = 60   # Ngưỡng an toàn (pixel)
+                max_dist = 130   # Ngưỡng gần nhất (pixel) -> blur tối đa
+                max_blur = 15    # Độ mờ tối đa (px)
+                
+                if dist <= safe_dist:
+                    target_blur = 0
+                else:
+                    # Tính blur tuyến tính từ 0 đến max_blur
+                    ratio = min((dist - safe_dist) / (max_dist - safe_dist), 1.0)
+                    target_blur = round(ratio * max_blur, 1)
                         
-                if target_blur != current_blur:
+                if abs(target_blur - current_blur) >= 0.5:
                     current_blur = target_blur
                     # Bơm CSS bằng markdown để làm mờ toàn bộ HTML mượt mà
                     effect_placeholder.markdown(
-                        f'<style>html {{ filter: blur({current_blur}px); transition: filter 0.5s ease; }}</style>', 
+                        f'<style>html {{ filter: blur({current_blur}px); transition: filter 0.3s ease; }}</style>', 
                         unsafe_allow_html=True
                     )
                 # ====================================================
